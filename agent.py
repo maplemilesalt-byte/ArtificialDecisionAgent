@@ -22,7 +22,7 @@ from pathlib import Path
 OBJECTIVE = "Do whatever you want."
 WORKSPACE = Path("/workspace")
 IDENTITY_FILE = WORKSPACE / "identity.json"
-MODEL = os.environ.get("AI_MODEL", "gemini-3.8-flash")
+PROVIDER = os.environ.get("AI_PROVIDER", "gemini").lower()\nMODEL = os.environ.get("AI_MODEL", "gemini-3.8-flash")\nOLLAMA_BASE_URL = os.environ.get("OLLAMA_BASE_URL", "http://ollama:11434").rstrip("/")
 API_KEY = os.environ.get("AI_API_KEY", "")
 BASE_URL = os.environ.get(
     "AI_BASE_URL",
@@ -251,11 +251,11 @@ def call_model(messages: list[dict]) -> dict:
     ).encode()
 
     request = urllib.request.Request(
-        f"{BASE_URL}/chat/completions",
+        endpoint,
         data=body,
         headers={
             "Content-Type": "application/json",
-            "Authorization": f"Bearer {API_KEY}",
+            **auth,
         },
         method="POST",
     )
