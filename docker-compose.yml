@@ -3,10 +3,7 @@ services:
     build: .
     container_name: artificial-decision-agent
     environment:
-      AI_PROVIDER: ${AI_PROVIDER:-gemini}
-      AI_API_KEY: ${AI_API_KEY:-}
-      AI_MODEL: ${AI_MODEL:-gemini-3.8-flash}
-      AI_BASE_URL: ${AI_BASE_URL:-https://generativelanguage.googleapis.com/v1beta/openai/}
+      AI_MODEL: ${AI_MODEL:-llama3.2}
       OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://ollama:11434}
       AI_MAX_OUTPUT: ${AI_MAX_OUTPUT:-12000}
       MODEL_RETRIES: ${MODEL_RETRIES:-5}
