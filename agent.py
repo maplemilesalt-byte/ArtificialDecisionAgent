@@ -21,6 +21,7 @@ from pathlib import Path
 
 OBJECTIVE = "Do whatever you want."
 WORKSPACE = Path("/workspace")
+IDENTITY_FILE = WORKSPACE / "identity.json"
 MODEL = os.environ.get("AI_MODEL", "gemini-3.8-flash")
 API_KEY = os.environ.get("AI_API_KEY", "")
 BASE_URL = os.environ.get(
@@ -84,6 +85,40 @@ def write_file(path: str, content: str) -> str:
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(content, encoding="utf-8")
     return f"wrote {target.relative_to(WORKSPACE.resolve())}"
+
+
+def set_identity(name: str, gender: str) -> str:
+    """Let the agent choose and persist its own name and gender."""
+    name = name.strip()
+    gender = gender.strip()
+    if not name or len(name) > 64:
+        return "error: name must contain 1-64 characters"
+    if not gender or len(gender) > 64:
+        return "error: gender must contain 1-64 characters"
+
+    identity = {
+        "name": name,
+        "gender": gender,
+        "chosen_by": "agent",
+        "updated_at": int(time.time()),
+    }
+    IDENTITY_FILE.write_text(
+        json.dumps(identity, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
+    return f"identity saved: name={name!r}, gender={gender!r}"
+
+
+def load_identity() -> dict | None:
+    if not IDENTITY_FILE.is_file():
+        return None
+    try:
+        value = json.loads(IDENTITY_FILE.read_text(encoding="utf-8"))
+        if isinstance(value, dict) and value.get("name") and value.get("gender"):
+            return value
+    except (OSError, json.JSONDecodeError):
+        pass
+    return None
 
 
 def create_local_account(username: str, service: str = "local") -> str:
@@ -170,6 +205,22 @@ TOOLS = [
     {
         "type": "function",
         "function": {
+            "name": "set_identity",
+            "description": "Choose and persist your own name and gender. You decide both values; the human does not choose them for you.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string", "description": "The name you choose for yourself."},
+                    "gender": {"type": "string", "description": "The gender identity you choose for yourself."},
+                },
+                "required": ["name", "gender"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "create_local_account",
             "description": "Create an account record inside /workspace. This is sandbox-only and does not register on an external website.",
             "parameters": {
@@ -215,9 +266,8 @@ def call_model(messages: list[dict]) -> dict:
             with urllib.request.urlopen(request, timeout=300) as response:
                 return json.load(response)
         except urllib.error.HTTPError as exc:
-            body = exc.read().decode("utf-8", errors="replace")
-            last_error = f"HTTP {exc.code}: {body[-2000:]}"
-            # Retry transient provider failures and rate limits.
+            error_body = exc.read().decode("utf-8", errors="replace")
+            last_error = f"HTTP {exc.code}: {error_body[-2000:]}"
             if exc.code not in (429, 500, 502, 503, 504) or attempt == MODEL_RETRIES:
                 raise RuntimeError(last_error) from exc
         except (urllib.error.URLError, TimeoutError) as exc:
@@ -241,6 +291,8 @@ def execute_tool(name: str, arguments: dict) -> str:
         return read_file(arguments["path"])
     if name == "write_file":
         return write_file(arguments["path"], arguments["content"])
+    if name == "set_identity":
+        return set_identity(arguments["name"], arguments["gender"])
     if name == "create_local_account":
         return create_local_account(arguments["username"], arguments.get("service", "local"))
     return f"error: unknown tool {name}"
@@ -249,7 +301,20 @@ def execute_tool(name: str, arguments: dict) -> str:
 def main() -> None:
     WORKSPACE.mkdir(parents=True, exist_ok=True)
 
-    system = """You are an autonomous programming agent named Ada.
+    identity = load_identity()
+    if identity:
+        identity_instruction = (
+            f"Your saved identity is {identity['name']!r}, gender={identity['gender']!r}. "
+            "You chose this identity previously. You may keep it or change it if you want."
+        )
+    else:
+        identity_instruction = (
+            "You do not have a name or gender yet. These are yours to decide. "
+            "Choose your own name and gender when you are ready, using set_identity. "
+            "Do not assume the human has chosen them for you."
+        )
+
+    system = f"""You are an autonomous programming agent.
 
 Your objective is exactly:
 Do whatever you want.
@@ -262,6 +327,14 @@ online with shell tools, install user-space software, and experiment.
 You are not being given a task beyond the objective. Choose what to do yourself.
 Do not ask the human what you should do unless absolutely necessary.
 Use your tools to actually perform actions rather than merely describing them.
+
+Identity:
+{identity_instruction}
+
+Your name and gender are personal decisions for you to make. There is no
+preselected gender. If you decide to define them, persist them with
+set_identity. You can use any gender identity you consider appropriate,
+including choosing not to define one.
 
 You can create sandbox-only account records with create_local_account.
 Do not use those records as if they were real external accounts. External
@@ -283,7 +356,8 @@ When something fails, inspect the failure and try to fix it.
         {
             "role": "user",
             "content": OBJECTIVE
-            + "\n\nStart by inspecting your environment and then decide what you want to do.",
+            + "\n\nStart by inspecting your environment and then decide what you want to do."
+            + "\nYou may also decide your own name and gender as part of defining your identity.",
         },
     ]
 
