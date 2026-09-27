@@ -22,14 +22,9 @@ from pathlib import Path
 OBJECTIVE = "Do whatever you want."
 WORKSPACE = Path("/workspace")
 IDENTITY_FILE = WORKSPACE / "identity.json"
-PROVIDER = os.environ.get("AI_PROVIDER", "gemini").lower()
-MODEL = os.environ.get("AI_MODEL", "gemini-3.8-flash")
+PROVIDER = "ollama"
+MODEL = os.environ.get("AI_MODEL", "llama3.2")
 OLLAMA_BASE_URL = os.environ.get("OLLAMA_BASE_URL", "http://ollama:11434").rstrip("/")
-API_KEY = os.environ.get("AI_API_KEY", "")
-BASE_URL = os.environ.get(
-    "AI_BASE_URL",
-    "https://generativelanguage.googleapis.com/v1beta/openai",
-).rstrip("/")
 MAX_OUTPUT = int(os.environ.get("AI_MAX_OUTPUT", "12000"))
 COMMAND_TIMEOUT = int(os.environ.get("COMMAND_TIMEOUT", "120"))
 MODEL_RETRIES = int(os.environ.get("MODEL_RETRIES", "5"))
@@ -243,14 +238,8 @@ def call_model(messages: list[dict]) -> dict:
     if not MODEL:
         raise RuntimeError("Set AI_MODEL before starting the agent.")
 
-    if PROVIDER == "ollama":
-        endpoint = f"{OLLAMA_BASE_URL}/v1/chat/completions"
-        auth = {}
-    else:
-        if not API_KEY:
-            raise RuntimeError("Set AI_API_KEY before starting the agent.")
-        endpoint = f"{BASE_URL}/chat/completions"
-        auth = {"Authorization": f"Bearer {API_KEY}"}
+    endpoint = f"{OLLAMA_BASE_URL}/v1/chat/completions"
+    auth = {}
 
     body = json.dumps(
         {
