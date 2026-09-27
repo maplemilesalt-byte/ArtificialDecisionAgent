@@ -280,16 +280,28 @@ def call_model(messages: list[dict]) -> dict:
 
 def execute_tool(name: str, arguments: dict) -> str:
     if name == "run_command":
+        if "command" not in arguments:
+            return "error: run_command requires 'command'"
         return run_command(arguments["command"])
     if name == "list_workspace":
         return list_workspace()
     if name == "read_file":
+        if "path" not in arguments:
+            return "error: read_file requires 'path'"
         return read_file(arguments["path"])
     if name == "write_file":
+        missing = [key for key in ("path", "content") if key not in arguments]
+        if missing:
+            return f"error: write_file requires {', '.join(repr(key) for key in missing)}"
         return write_file(arguments["path"], arguments["content"])
     if name == "set_identity":
+        missing = [key for key in ("name", "gender") if key not in arguments]
+        if missing:
+            return f"error: set_identity requires {', '.join(repr(key) for key in missing)}"
         return set_identity(arguments["name"], arguments["gender"])
     if name == "create_local_account":
+        if "username" not in arguments:
+            return "error: create_local_account requires 'username'"
         return create_local_account(arguments["username"], arguments.get("service", "local"))
     return f"error: unknown tool {name}"
 
