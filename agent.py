@@ -239,7 +239,6 @@ def call_model(messages: list[dict]) -> dict:
         raise RuntimeError("Set AI_MODEL before starting the agent.")
 
     endpoint = f"{OLLAMA_BASE_URL}/v1/chat/completions"
-    auth = {}
 
     body = json.dumps(
         {
@@ -253,7 +252,7 @@ def call_model(messages: list[dict]) -> dict:
     request = urllib.request.Request(
         endpoint,
         data=body,
-        headers={"Content-Type": "application/json", **auth},
+        headers={"Content-Type": "application/json"},
         method="POST",
     )
 
@@ -293,6 +292,28 @@ def execute_tool(name: str, arguments: dict) -> str:
     if name == "create_local_account":
         return create_local_account(arguments["username"], arguments.get("service", "local"))
     return f"error: unknown tool {name}"
+
+
+def print_tool_action(name: str, arguments: dict) -> None:
+    """Print a compact, human-readable description of a tool call."""
+    if name == "run_command":
+        print(f"ran: {arguments.get('command', '')}", flush=True)
+    elif name == "read_file":
+        print(f"read: {arguments.get('path', '')}", flush=True)
+    elif name == "write_file":
+        print(f"wrote: {arguments.get('path', '')}", flush=True)
+    elif name == "set_identity":
+        print(
+            f"identity: {arguments.get('name', '')} ({arguments.get('gender', '')})",
+            flush=True,
+        )
+    elif name == "create_local_account":
+        service = arguments.get("service", "local")
+        print(f"account: {service}/{arguments.get('username', '')}", flush=True)
+    elif name == "list_workspace":
+        print("listed: /workspace", flush=True)
+    else:
+        print(f"used: {name}", flush=True)
 
 
 def main() -> None:
@@ -384,10 +405,15 @@ When something fails, inspect the failure and try to fix it.
         for tool_call in tool_calls:
             name = tool_call["function"]["name"]
             arguments = json.loads(tool_call["function"]["arguments"])
-            print(f"[tool] {name} {arguments}", flush=True)
+            print_tool_action(name, arguments)
 
             result = execute_tool(name, arguments)
-            print(result, flush=True)
+
+            if name == "run_command":
+                first_line = result.splitlines()[0] if result else ""
+                print(f"result: {first_line}", flush=True)
+            elif result.startswith("error:"):
+                print(f"result: {result}", flush=True)
 
             messages.append(
                 {
