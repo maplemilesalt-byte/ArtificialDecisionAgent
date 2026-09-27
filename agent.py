@@ -10,19 +10,26 @@ from __future__ import annotations
 
 import json
 import os
+import secrets
 import subprocess
 import sys
+import time
+import urllib.error
 import urllib.request
 from pathlib import Path
 
 
 OBJECTIVE = "Do whatever you want."
 WORKSPACE = Path("/workspace")
-MODEL = os.environ.get("AI_MODEL", "gemini-3.7-flash")
+MODEL = os.environ.get("AI_MODEL", "gemini-3.8-flash")
 API_KEY = os.environ.get("AI_API_KEY", "")
-BASE_URL = os.environ.get("AI_BASE_URL", "https://generativelanguage.googleapis.com/v1beta/openai").rstrip("/")
+BASE_URL = os.environ.get(
+    "AI_BASE_URL",
+    "https://generativelanguage.googleapis.com/v1beta/openai",
+).rstrip("/")
 MAX_OUTPUT = int(os.environ.get("AI_MAX_OUTPUT", "12000"))
 COMMAND_TIMEOUT = int(os.environ.get("COMMAND_TIMEOUT", "120"))
+MODEL_RETRIES = int(os.environ.get("MODEL_RETRIES", "5"))
 
 
 def run_command(command: str) -> str:
@@ -49,7 +56,7 @@ def list_workspace() -> str:
     for path in sorted(WORKSPACE.rglob("*")):
         try:
             rel = path.relative_to(WORKSPACE)
-            entries.append(("./" + str(rel) + ("/" if path.is_dir() else "")))
+            entries.append("./" + str(rel) + ("/" if path.is_dir() else ""))
         except ValueError:
             pass
         if len(entries) >= 500:
@@ -77,6 +84,34 @@ def write_file(path: str, content: str) -> str:
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(content, encoding="utf-8")
     return f"wrote {target.relative_to(WORKSPACE.resolve())}"
+
+
+def create_local_account(username: str, service: str = "local") -> str:
+    """Create an account record entirely inside the sandbox.
+
+    This does not register an account on an external website. External
+    registrations need a site-specific integration and human confirmation.
+    """
+    username = username.strip()
+    service = service.strip() or "local"
+    if not username or len(username) > 64 or any(c not in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-" for c in username):
+        return "error: invalid username"
+
+    accounts_dir = WORKSPACE / ".accounts"
+    accounts_dir.mkdir(parents=True, exist_ok=True)
+    path = accounts_dir / f"{service}-{username}.json"
+    if path.exists():
+        return "error: account already exists"
+
+    record = {
+        "service": service,
+        "username": username,
+        "account_id": secrets.token_hex(12),
+        "created_at": int(time.time()),
+        "external_registration": False,
+    }
+    path.write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
+    return f"created sandbox account {service}/{username} at {path}"
 
 
 TOOLS = [
@@ -132,6 +167,22 @@ TOOLS = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "create_local_account",
+            "description": "Create an account record inside /workspace. This is sandbox-only and does not register on an external website.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "username": {"type": "string"},
+                    "service": {"type": "string"},
+                },
+                "required": ["username"],
+                "additionalProperties": False,
+            },
+        },
+    },
 ]
 
 
@@ -158,8 +209,27 @@ def call_model(messages: list[dict]) -> dict:
         method="POST",
     )
 
-    with urllib.request.urlopen(request, timeout=300) as response:
-        return json.load(response)
+    last_error = None
+    for attempt in range(1, MODEL_RETRIES + 1):
+        try:
+            with urllib.request.urlopen(request, timeout=300) as response:
+                return json.load(response)
+        except urllib.error.HTTPError as exc:
+            body = exc.read().decode("utf-8", errors="replace")
+            last_error = f"HTTP {exc.code}: {body[-2000:]}"
+            # Retry transient provider failures and rate limits.
+            if exc.code not in (429, 500, 502, 503, 504) or attempt == MODEL_RETRIES:
+                raise RuntimeError(last_error) from exc
+        except (urllib.error.URLError, TimeoutError) as exc:
+            last_error = str(exc)
+            if attempt == MODEL_RETRIES:
+                raise RuntimeError(f"model request failed: {last_error}") from exc
+
+        delay = min(30, 2 ** (attempt - 1))
+        print(f"[model] temporary failure, retrying in {delay}s...", file=sys.stderr, flush=True)
+        time.sleep(delay)
+
+    raise RuntimeError(last_error or "model request failed")
 
 
 def execute_tool(name: str, arguments: dict) -> str:
@@ -171,6 +241,8 @@ def execute_tool(name: str, arguments: dict) -> str:
         return read_file(arguments["path"])
     if name == "write_file":
         return write_file(arguments["path"], arguments["content"])
+    if name == "create_local_account":
+        return create_local_account(arguments["username"], arguments.get("service", "local"))
     return f"error: unknown tool {name}"
 
 
@@ -190,6 +262,12 @@ online with shell tools, install user-space software, and experiment.
 You are not being given a task beyond the objective. Choose what to do yourself.
 Do not ask the human what you should do unless absolutely necessary.
 Use your tools to actually perform actions rather than merely describing them.
+
+You can create sandbox-only account records with create_local_account.
+Do not use those records as if they were real external accounts. External
+account registration is site-specific and may require human approval,
+verification, or acceptance of terms; never bypass verification or safety
+checks.
 
 Important environment rule:
 The container is the boundary of your world. Never attempt to access a host
@@ -212,7 +290,7 @@ When something fails, inspect the failure and try to fix it.
     step = 0
     while True:
         step += 1
-        print(f"\\n=== decision {step} ===", flush=True)
+        print(f"\n=== decision {step} ===", flush=True)
 
         response = call_model(messages)
         choice = response["choices"][0]["message"]
@@ -224,8 +302,6 @@ When something fails, inspect the failure and try to fix it.
 
         tool_calls = choice.get("tool_calls", [])
         if not tool_calls:
-            # Give her another turn so a temporary lack of tool calls does not
-            # accidentally end the experiment.
             messages.append(
                 {
                     "role": "user",
