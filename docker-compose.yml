@@ -1,0 +1,21 @@
+services:
+  agent:
+    build: .
+    container_name: artificial-decision-agent
+    environment:
+      AI_API_KEY: ${AI_API_KEY}
+      AI_MODEL: ${AI_MODEL}
+      AI_BASE_URL: ${AI_BASE_URL:-https://api.openai.com/v1}
+      AI_MAX_OUTPUT: ${AI_MAX_OUTPUT:-12000}
+      COMMAND_TIMEOUT: ${COMMAND_TIMEOUT:-120}
+    network_mode: bridge
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    pids_limit: 256
+    mem_limit: 2g
+    cpus: 2
+    tmpfs:
+      - /tmp
+    read_only: false
