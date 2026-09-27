@@ -22,7 +22,9 @@ from pathlib import Path
 OBJECTIVE = "Do whatever you want."
 WORKSPACE = Path("/workspace")
 IDENTITY_FILE = WORKSPACE / "identity.json"
-PROVIDER = os.environ.get("AI_PROVIDER", "gemini").lower()\nMODEL = os.environ.get("AI_MODEL", "gemini-3.8-flash")\nOLLAMA_BASE_URL = os.environ.get("OLLAMA_BASE_URL", "http://ollama:11434").rstrip("/")
+PROVIDER = os.environ.get("AI_PROVIDER", "gemini").lower()
+MODEL = os.environ.get("AI_MODEL", "gemini-3.8-flash")
+OLLAMA_BASE_URL = os.environ.get("OLLAMA_BASE_URL", "http://ollama:11434").rstrip("/")
 API_KEY = os.environ.get("AI_API_KEY", "")
 BASE_URL = os.environ.get(
     "AI_BASE_URL",
@@ -238,8 +240,17 @@ TOOLS = [
 
 
 def call_model(messages: list[dict]) -> dict:
-    if not API_KEY or not MODEL:
-        raise RuntimeError("Set AI_API_KEY and AI_MODEL before starting the agent.")
+    if not MODEL:
+        raise RuntimeError("Set AI_MODEL before starting the agent.")
+
+    if PROVIDER == "ollama":
+        endpoint = f"{OLLAMA_BASE_URL}/v1/chat/completions"
+        auth = {}
+    else:
+        if not API_KEY:
+            raise RuntimeError("Set AI_API_KEY before starting the agent.")
+        endpoint = f"{BASE_URL}/chat/completions"
+        auth = {"Authorization": f"Bearer {API_KEY}"}
 
     body = json.dumps(
         {
@@ -253,10 +264,7 @@ def call_model(messages: list[dict]) -> dict:
     request = urllib.request.Request(
         endpoint,
         data=body,
-        headers={
-            "Content-Type": "application/json",
-            **auth,
-        },
+        headers={"Content-Type": "application/json", **auth},
         method="POST",
     )
 
