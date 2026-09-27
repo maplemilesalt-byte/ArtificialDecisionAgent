@@ -27,17 +27,44 @@ Docker container
 The container has no bind mounts, no Docker socket, no host networking, and no
 host PID namespace.
 
-## Run
+## Configuration
 
-Create an environment file:
+The API key is provided through a local `.env` file in the **root of this
+repository**.
+
+Create this file:
+
+```text
+.env
+```
+
+with:
 
 ```env
-AI_API_KEY=your_api_key
-AI_MODEL=your_model
+AI_API_KEY=your_api_key_here
+AI_MODEL=your_model_name
 # AI_BASE_URL=https://api.openai.com/v1
 ```
 
-Then:
+The file should be located at:
+
+```text
+ArtificialDecisionAgent/
+├── .env              <-- put the API key here
+├── agent.py
+├── Dockerfile
+└── docker-compose.yml
+```
+
+**Do not commit `.env` to Git.** It is already included in `.gitignore`, so Git
+will ignore it automatically.
+
+The API key is passed from `.env` into the container as the `AI_API_KEY`
+environment variable. `agent.py` reads that environment variable.
+
+## Run
+
+After creating `.env`:
 
 ```bash
 docker compose build
