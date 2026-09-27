@@ -18,9 +18,9 @@ from pathlib import Path
 
 OBJECTIVE = "Do whatever you want."
 WORKSPACE = Path("/workspace")
-MODEL = os.environ.get("AI_MODEL", "")
+MODEL = os.environ.get("AI_MODEL", "gemini-3.7-flash")
 API_KEY = os.environ.get("AI_API_KEY", "")
-BASE_URL = os.environ.get("AI_BASE_URL", "https://api.openai.com/v1").rstrip("/")
+BASE_URL = os.environ.get("AI_BASE_URL", "https://generativelanguage.googleapis.com/v1beta/openai").rstrip("/")
 MAX_OUTPUT = int(os.environ.get("AI_MAX_OUTPUT", "12000"))
 COMMAND_TIMEOUT = int(os.environ.get("COMMAND_TIMEOUT", "120"))
 
